@@ -1,4 +1,4 @@
-name: /jet/home/bpollack/ocean/conda_envs/mre_ai
+name: mre_ai
 channels:
   - conda-forge
   - defaults
@@ -234,4 +234,4 @@ dependencies:
   - seaborn
   - openpyxl
   - pingouin
-prefix: /jet/home/bpollack/ocean/conda_envs/mre_ai
+prefix: mre_ai
