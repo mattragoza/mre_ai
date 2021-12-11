@@ -22,16 +22,18 @@ from mre_ai.segmentation import ChaosDataset
 from mre_ai.pytorch_arch_deeplab_3d import DeepLab
 from mre_ai.pytorch_arch_models_genesis import UNet3D
 import matplotlib.pyplot as plt
+import pandas as pd
+import wandb
+wandb.init(project="mre_ai", entity="mattragoza")
 
 
-def train_seg_model(data_path: str, data_file: str, output_path: str, model_version: str = 'tmp',
-                    verbose: str = True, **kwargs) -> None:
-    '''Function to start training liver segmentation.
+def train_seg_model(data_path: str, data_file: str, output_path: str, model_version: str = 'tmp', verbose: str = True, **kwargs) -> None:
+    '''
+    Function to start training liver segmentation.
 
-    This function is intended to be imported and called in interactive sessions, from the command
-    line, or by a slurm job submission script.  This function should be able to tweak any part of
-    the model (or models) via a standardized config in order to easily document the impact of
-    parameter settings.
+    This function is intended to be imported and called in interactive sessions, from the command line, or by a slurm job submission script.
+    This function should be able to tweak any part of the model (or models)
+    via a standardized config in order to easily document the impact of parameter settings.
 
     Args:
         data_path (str): Full path to location of data.
@@ -135,14 +137,21 @@ def train_seg_model(data_path: str, data_file: str, output_path: str, model_vers
         #                                        cfg['model_cap'],
         #                                        cfg['out_channels_final'], cfg['channel_growth'],
         #                                        cfg['coord_conv'], cfg['transfer_layer'])
-        model = DeepLab(in_channels=cfg['in_channels'], out_channels=cfg['out_channels_final'],
-                        output_stride=8, do_ord=False, norm='bn', do_clinical=False)
+        model = DeepLab(
+            in_channels=cfg['in_channels'],
+            out_channels=cfg['out_channels_final'],
+            output_stride=8,
+            #do_ord=False, TypeError: unexpected keyword argument
+            norm='bn',
+            do_clinical=False
+        )
     elif cfg['model_arch'] == 'ModelsGenesis3D':
         model = UNet3D()
-
         # Load pre-trained weights
-        weight_dir = ('/ocean/projects/asc170022p/bpollack/mre_ai/' +
-                      'ModelsGenesis/pretrained_weights/Genesis_Chest_CT.pt')
+        weight_dir = (
+            '/ocean/projects/asc170022p/bpollack/mre_ai/' +
+            'ModelsGenesis/pretrained_weights/Genesis_Chest_CT.pt'
+        )
         checkpoint = torch.load(weight_dir)
         state_dict = checkpoint['state_dict']
         unParalled_state_dict = {}
@@ -168,6 +177,15 @@ def train_seg_model(data_path: str, data_file: str, output_path: str, model_vers
 
     model.to(device)
 
+    # send config to wandb
+    cfg['data_file'] = data_file
+    cfg['data_path'] = data_path
+    cfg['output_path'] = output_path
+    wandb.config = cfg
+
+    # watch model with wandb
+    wandb.watch(model)
+
     if cfg['dry_run']:
         inputs, targets, names = next(iter(dataloaders['train']))
         print('test set info:')
@@ -188,7 +206,7 @@ def train_seg_model(data_path: str, data_file: str, output_path: str, model_vers
         # Tensorboardx writer, model, config paths
         writer_dir = Path(output_path, 'tb_runs')
         config_dir = Path(output_path, 'config')
-        model_dir = Path(output_path, 'trained_models', subj)
+        model_dir = Path(output_path, 'weights', subj)
         writer_dir.mkdir(parents=True, exist_ok=True)
         config_dir.mkdir(parents=True, exist_ok=True)
         model_dir.mkdir(parents=True, exist_ok=True)
@@ -269,19 +287,44 @@ def my_worker_init_fn(worker_id):
 
 
 def default_cfg():
-    cfg = {'train_clip': True, 'train_aug': True, 'train_sample': 'shuffle',
-           'val_clip': True, 'val_aug': False, 'val_sample': 'shuffle',
-           'test_clip': True, 'test_aug': False,
-           'train_seq_mode': None, 'val_seq_mode': None, 'test_seq_mode': 'all', 'def_seq_mode':
-           'random', 'seed': 100,
-           'worker_init_fn': 'default',
-           'subj': '01', 'val': ['002', '003', '101', '102'],
-           'batch_size': 50, 'model_cap': 16, 'lr': 1e-2, 'step_size': 20,
-           'gamma': 0.1, 'num_epochs': 40, 'dry_run': False, 'coord_conv': False, 'loss': 'dice',
-           'model_arch': 'modular', 'n_layers': 3, 'in_channels': 1, 'out_channels_final': 1,
-           'channel_growth': False, 'transfer_layer': False, 'bce_weight': 0.5,
-           'resize': False, 'transform': False,
-           'train_color_aug': False, 'val_color_aug': False, 'test_color_aug': False}
+    cfg = {
+        'train_clip': True,
+        'train_aug': True,
+        'train_sample': 'shuffle',
+        'val_clip': True,
+        'val_aug': False,
+        'val_sample': 'shuffle',
+        'test_clip': True,
+        'test_aug': False,
+        'train_seq_mode': None,
+        'val_seq_mode': None,
+        'test_seq_mode': 'all',
+        'def_seq_mode': 'random',
+        'seed': 100,
+        'worker_init_fn': 'default',
+        'subj': '01', 'val': ['002', '003', '101', '102'],
+        'batch_size': 50,
+        'model_cap': 16,
+        'lr': 1e-2,
+        'step_size': 20,
+        'gamma': 0.1,
+        'num_epochs': 40,
+        'dry_run': False,
+        'coord_conv': False,
+        'loss': 'dice',
+        'model_arch': 'modular',
+        'n_layers': 3,
+        'in_channels': 1,
+        'out_channels_final': 1,
+        'channel_growth': False,
+        'transfer_layer': False,
+        'bce_weight': 0.5,
+        'resize': False,
+        'transform': False,
+        'train_color_aug': False,
+        'val_color_aug': False,
+        'test_color_aug': False
+    }
     return cfg
 
 
@@ -291,6 +334,10 @@ def train_model_core(model, optimizer, scheduler, device, dataloaders, num_epoch
     best_loss = 1e16
     best_dice = 1e16
     best_bce = 1e16
+
+    columns = ['epoch', 'phase', 'batch']
+    df = pd.DataFrame(columns=columns).set_index(columns)
+
     for epoch in range(num_epochs):
         try:
             if verbose:
@@ -312,7 +359,7 @@ def train_model_core(model, optimizer, scheduler, device, dataloaders, num_epoch
                 epoch_samples = 0
 
                 # iterate through batches of data for each epoch
-                for data in dataloaders[phase]:
+                for i, data in enumerate(dataloaders[phase]):
                     inputs = data[0].to(device)
                     labels = data[1].to(device)
                     # zero the parameter gradients
@@ -329,6 +376,25 @@ def train_model_core(model, optimizer, scheduler, device, dataloaders, num_epoch
                             optimizer.step()
                     # accrue total number of samples
                     epoch_samples += inputs.size(0)
+
+                    # log metrics to wandb
+                    if phase == 'train':
+                        wandb.log({
+                            'train_loss': loss.item(),
+                            'train_dice': dice.item(),
+                            'train_bce': bce.item()
+                        })
+                    elif phase == 'val':
+                        wandb.log({
+                            'val_loss': loss.item(),
+                            'val_dice': dice.item(),
+                            'val_bce': bce.item()
+                        })
+                    # and store in data frame
+                    df.loc[(epoch, phase, i), 'loss'] = loss.item()
+                    df.loc[(epoch, phase, i), 'dice'] = dice.item()
+                    df.loc[(epoch, phase, i), 'bce'] = bce.item()
+
                 if phase == 'train':
                     scheduler.step()
 
@@ -360,6 +426,8 @@ def train_model_core(model, optimizer, scheduler, device, dataloaders, num_epoch
     if verbose:
         # print('Best val loss: {:4f}'.format(best_loss))
         print(f'Best val bce: {best_bce:.3f}, dice: {best_dice:.3f}, loss: {best_loss:.3f}')
+
+    df.to_csv('train_segment.metrics', sep=' ', header=True)
 
     # load best model weights
     model.load_state_dict(best_model_wts)
