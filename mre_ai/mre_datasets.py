@@ -120,6 +120,7 @@ class MREtoXr:
         self.out_subdir = kwargs.get('out_subdir', 'test')
 
         self.output_dir = Path(self.data_dir.parents[1], self.out_subdir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         print(self.data_dir)
         print(self.patient)
         print(self.sequences)
